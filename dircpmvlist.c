@@ -10,6 +10,8 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <limits.h>
+#include <libgen.h>
+#include <dirent.h>
 
 char *dest_dir;  // Define dest_dir as a global variable
 
@@ -23,7 +25,7 @@ void create_destination_directory(const char *dest_path) {
 }
 
 int copy_file(const char *src_path, const char *dest_path) {
-      FILE *src_file = fopen(src_path, "rb");
+    FILE *src_file = fopen(src_path, "rb");
     if (src_file == NULL) {
         perror("fopen(src)");
         return -1;
@@ -54,24 +56,48 @@ int copy_file(const char *src_path, const char *dest_path) {
     return 0;
 }
 
-static int ls_copy_callback(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf) {
-    if (typeflag == FTW_F) {
-        // Build the destination path
-        char dest_path[PATH_MAX];
-        snprintf(dest_path, PATH_MAX, "%s/%s", dest_dir, fpath + ftwbuf->base);
+void copy_contents(const char *src_path, const char *dest_path) {
+    struct stat st;
+    if (stat(src_path, &st) == 0) {
+        if (S_ISDIR(st.st_mode)) {
+            // It's a directory, so recursively copy its contents
+            DIR *dir = opendir(src_path);
+            if (dir == NULL) {
+                perror("opendir");
+                return;
+            }
 
-        // Create destination directory if it doesn't exist
-        create_destination_directory(dest_dir);
+            // Create destination directory if it doesn't exist
+            create_destination_directory(dest_path);
 
-        // Copy the file
-        if (copy_file(fpath, dest_path) == -1) {
-            fprintf(stderr, "Failed to copy file from %s to %s\n", fpath, dest_path);
+            struct dirent *entry;
+            while ((entry = readdir(dir))) {
+                if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+                    continue;
+
+                char sub_src[PATH_MAX];
+                char sub_dest[PATH_MAX];
+                snprintf(sub_src, PATH_MAX, "%s/%s", src_path, entry->d_name);
+                snprintf(sub_dest, PATH_MAX, "%s/%s", dest_path, entry->d_name);
+
+                copy_contents(sub_src, sub_dest);
+            }
+
+            closedir(dir);
+        } else if (S_ISREG(st.st_mode)) {
+            // It's a regular file, so copy it
+            // Create destination directory if it doesn't exist
+            char dest_dir_copy[PATH_MAX];
+            strcpy(dest_dir_copy, dest_path);
+            create_destination_directory(dirname(dest_dir_copy));
+
+            // Copy the file
+            if (copy_file(src_path, dest_path) == -1) {
+                fprintf(stderr, "Failed to copy file from %s to %s\n", src_path, dest_path);
+            }
         }
     }
-
-    return 0;
 }
-
 
 int main(int argc, char *argv[]) {
     if (argc != 4) {
@@ -85,12 +111,13 @@ int main(int argc, char *argv[]) {
 
     create_destination_directory(dest_dir);
 
-    if (nftw(src_dir, ls_copy_callback, 10, FTW_PHYS) == -1) {
-        perror("nftw");
-        return EXIT_FAILURE;
-    }
+    // Create destination directory if it doesn't exist
+    create_destination_directory(dest_dir);
 
-    printf("Files with extension '%s' copied from %s to %s.\n", extension, src_dir, dest_dir);
+    // Copy the contents
+    copy_contents(src_dir, dest_dir);
+
+    printf("Files with extension '%s' and directories copied from %s to %s.\n", extension, src_dir, dest_dir);
 
     return EXIT_SUCCESS;
 }
