@@ -1,5 +1,3 @@
-#define _XOPEN_SOURCE 500
-#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,6 +12,8 @@
 #include <dirent.h>
 
 char *dest_dir;  // Define dest_dir as a global variable
+char *extensions[6]; // Array to store extensions
+int extension_count = 0;
 
 void create_destination_directory(const char *dest_path) {
     if (mkdir(dest_path, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) == -1) {
@@ -24,7 +24,24 @@ void create_destination_directory(const char *dest_path) {
     }
 }
 
+int has_extension(const char *filename) {
+    if (extension_count == 0)
+        return 1; // No extension list provided, copy all files
+
+    for (int i = 0; i < extension_count; i++) {
+        if (strstr(filename, extensions[i])) {
+            return 1; // File has a matching extension, copy it
+        }
+    }
+    return 0; // File does not have a matching extension, skip it
+}
+
 int copy_file(const char *src_path, const char *dest_path) {
+    // Check if the file has a valid extension
+    if (!has_extension(src_path)) {
+        return 0;
+    }
+
     FILE *src_file = fopen(src_path, "rb");
     if (src_file == NULL) {
         perror("fopen(src)");
@@ -92,32 +109,42 @@ void copy_contents(const char *src_path, const char *dest_path) {
             create_destination_directory(dirname(dest_dir_copy));
 
             // Copy the file
-            if (copy_file(src_path, dest_path) == -1) {
-                fprintf(stderr, "Failed to copy file from %s to %s\n", src_path, dest_path);
-            }
+            copy_file(src_path, dest_path);
         }
     }
 }
 
 int main(int argc, char *argv[]) {
-    if (argc != 4) {
-        fprintf(stderr, "Usage: %s <src_path> <dest_path> <extension>\n", argv[0]);
+    if (argc < 3 || argc > 11) {
+        fprintf(stderr, "Usage: %s <src_path> <dest_path> [-cp <extension1> ... <extension6>]\n", argv[0]);
         return EXIT_FAILURE;
     }
 
     const char *src_dir = argv[1];
     dest_dir = argv[2];  // Assign to global variable
-    const char *extension = argv[3];
 
-    create_destination_directory(dest_dir);
+    // Check if extensions are provided
+    if (argc > 3 && strcmp(argv[3], "-cp") == 0) {
+        // Extensions are provided, store them
+        for (int i = 4; i < argc && i < 10; i++) {
+            extensions[i - 4] = argv[i];
+            extension_count++;
+        }
+    } else {
+        // No extensions provided, copy all files
+        extension_count = 0;
+    }
 
-    // Create destination directory if it doesn't exist
     create_destination_directory(dest_dir);
 
     // Copy the contents
     copy_contents(src_dir, dest_dir);
 
-    printf("Files with extension '%s' and directories copied from %s to %s.\n", extension, src_dir, dest_dir);
+    if (extension_count > 0) {
+        printf("Files with specified extensions copied from %s to %s.\n", src_dir, dest_dir);
+    } else {
+        printf("All files and directories copied from %s to %s.\n", src_dir, dest_dir);
+    }
 
     return EXIT_SUCCESS;
 }
