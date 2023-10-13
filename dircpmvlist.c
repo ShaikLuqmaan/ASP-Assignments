@@ -36,44 +36,52 @@ int has_extension(const char *filename) {
     return 0; // File does not have a matching extension, skip it
 }
 
-int copy_file(const char *src_path, const char *dest_path) {
+int perform_file_operation(const char *src_path, const char *dest_path, int is_move) {
     // Check if the file has a valid extension
     if (!has_extension(src_path)) {
         return 0;
     }
 
-    FILE *src_file = fopen(src_path, "rb");
-    if (src_file == NULL) {
-        perror("fopen(src)");
-        return -1;
-    }
-
-    FILE *dest_file = fopen(dest_path, "wb");
-    if (dest_file == NULL) {
-        perror("fopen(dest)");
-        fclose(src_file);
-        return -1;
-    }
-
-    char buffer[BUFSIZ];
-    size_t bytesRead;
-
-    while ((bytesRead = fread(buffer, 1, BUFSIZ, src_file)) > 0) {
-        size_t bytesWritten = fwrite(buffer, 1, bytesRead, dest_file);
-        if (bytesWritten != bytesRead) {
-            perror("fwrite");
-            fclose(src_file);
-            fclose(dest_file);
+    if (is_move) {
+        if (rename(src_path, dest_path) != 0) {
+            perror("rename");
             return -1;
         }
+    } else {
+        FILE *src_file = fopen(src_path, "rb");
+        if (src_file == NULL) {
+            perror("fopen(src)");
+            return -1;
+        }
+
+        FILE *dest_file = fopen(dest_path, "wb");
+        if (dest_file == NULL) {
+            perror("fopen(dest)");
+            fclose(src_file);
+            return -1;
+        }
+
+        char buffer[BUFSIZ];
+        size_t bytesRead;
+
+        while ((bytesRead = fread(buffer, 1, BUFSIZ, src_file)) > 0) {
+            size_t bytesWritten = fwrite(buffer, 1, bytesRead, dest_file);
+            if (bytesWritten != bytesRead) {
+                perror("fwrite");
+                fclose(src_file);
+                fclose(dest_file);
+                return -1;
+            }
+        }
+
+        fclose(src_file);
+        fclose(dest_file);
     }
 
-    fclose(src_file);
-    fclose(dest_file);
     return 0;
 }
 
-void copy_contents(const char *src_path, const char *dest_path) {
+void copy_contents(const char *src_path, const char *dest_path, int is_move) {
     struct stat st;
     if (stat(src_path, &st) == 0) {
         if (S_ISDIR(st.st_mode)) {
@@ -97,53 +105,81 @@ void copy_contents(const char *src_path, const char *dest_path) {
                 snprintf(sub_src, PATH_MAX, "%s/%s", src_path, entry->d_name);
                 snprintf(sub_dest, PATH_MAX, "%s/%s", dest_path, entry->d_name);
 
-                copy_contents(sub_src, sub_dest);
+                copy_contents(sub_src, sub_dest, is_move);
             }
 
             closedir(dir);
+
+            if (is_move) {
+                if (remove(src_path) != 0) {
+                    perror("remove");
+                }
+            }
         } else if (S_ISREG(st.st_mode)) {
-            // It's a regular file, so copy it
+            // It's a regular file, so copy or move it
             // Create destination directory if it doesn't exist
             char dest_dir_copy[PATH_MAX];
             strcpy(dest_dir_copy, dest_path);
             create_destination_directory(dirname(dest_dir_copy));
 
-            // Copy the file
-            copy_file(src_path, dest_path);
+            // Copy or move the file
+            perform_file_operation(src_path, dest_path, is_move);
         }
     }
 }
 
 int main(int argc, char *argv[]) {
     if (argc < 3 || argc > 11) {
-        fprintf(stderr, "Usage: %s <src_path> <dest_path> [-cp <extension1> ... <extension6>]\n", argv[0]);
+        fprintf(stderr, "Usage: %s <src_path> <dest_path> [-cp/-mv <extension1> ... <extension6>]\n", argv[0]);
         return EXIT_FAILURE;
     }
 
     const char *src_dir = argv[1];
     dest_dir = argv[2];  // Assign to global variable
 
+    // Check if the source directory exists
+    struct stat src_stat;
+    if (stat(src_dir, &src_stat) != 0 || !S_ISDIR(src_stat.st_mode)) {
+        fprintf(stderr, "Source directory does not exist: %s\n", src_dir);
+        return EXIT_FAILURE;
+    }
+
+    int is_move = 0;  // Flag to indicate whether to move or copy
+
     // Check if extensions are provided
-    if (argc > 3 && strcmp(argv[3], "-cp") == 0) {
-        // Extensions are provided, store them
-        for (int i = 4; i < argc && i < 10; i++) {
-            extensions[i - 4] = argv[i];
-            extension_count++;
+    if (argc > 3) {
+        if (strcmp(argv[3], "-cp") == 0) {
+            // Extensions are provided for copying
+            is_move = 0;
+        } else if (strcmp(argv[3], "-mv") == 0) {
+            // Extensions are provided for moving
+            is_move = 1;
         }
-    } else {
-        // No extensions provided, copy all files
-        extension_count = 0;
+    }
+
+    // Store provided extensions
+    for (int i = 4; i < argc && i < 10; i++) {
+        extensions[i - 4] = argv[i];
+        extension_count++;
     }
 
     create_destination_directory(dest_dir);
 
-    // Copy the contents
-    copy_contents(src_dir, dest_dir);
+    // Copy or move the contents
+    copy_contents(src_dir, dest_dir, is_move);
 
     if (extension_count > 0) {
-        printf("Files with specified extensions copied from %s to %s.\n", src_dir, dest_dir);
+        if (is_move) {
+            printf("Files with specified extensions moved from %s to %s.\n", src_dir, dest_dir);
+        } else {
+            printf("Files with specified extensions copied from %s to %s.\n", src_dir, dest_dir);
+        }
     } else {
-        printf("All files and directories copied from %s to %s.\n", src_dir, dest_dir);
+        if (is_move) {
+            printf("All files and directories moved from %s to %s.\n", src_dir, dest_dir);
+        } else {
+            printf("All files and directories copied from %s to %s.\n", src_dir, dest_dir);
+        }
     }
 
     return EXIT_SUCCESS;
