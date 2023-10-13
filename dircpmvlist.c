@@ -154,7 +154,15 @@ int main(int argc, char *argv[]) {
         } else if (strcmp(argv[3], "-mv") == 0) {
             // Extensions are provided for moving
             is_move = 1;
+        } else {
+            fprintf(stderr, "Invalid flag: %s. Please use -cp or -mv.\n", argv[3]);
+            fprintf(stderr, "Usage: %s <src_path> <dest_path> [-cp/-mv <extension1> ... <extension6>]\n", argv[0]);
+            return EXIT_FAILURE;
         }
+    } else {
+        fprintf(stderr, "No flag provided. Please use -cp or -mv.\n");
+        fprintf(stderr, "Usage: %s <src_path> <dest_path> [-cp/-mv <extension1> ... <extension6>]\n", argv[0]);
+        return EXIT_FAILURE;
     }
 
     // Store provided extensions
