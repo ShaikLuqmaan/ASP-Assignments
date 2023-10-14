@@ -11,11 +11,15 @@
 #include <libgen.h>
 #include <dirent.h>
 
-char *dest_dir;  // Define dest_dir as a global variable
-char *extensions[6]; // Array to store extensions
+// Define dest_dir as a global variable
+char *dest_dir;  
+// Array to store provided extensions
+char *extensions[6]; 
 int extension_count = 0;
 
-void create_destination_directory(const char *dest_path) {
+
+// Function to create destination directory if not present
+void ls_create_destination_directory(const char *dest_path) {
     if (mkdir(dest_path, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) == -1) {
         if (errno != EEXIST) {
             perror("mkdir");
@@ -24,7 +28,8 @@ void create_destination_directory(const char *dest_path) {
     }
 }
 
-int has_extension(const char *filename) {
+// Function to check if extension argument is provided by the user
+int ls_has_extension(const char *filename) {
     if (extension_count == 0)
         return 1; // No extension list provided, copy all files
 
@@ -36,9 +41,10 @@ int has_extension(const char *filename) {
     return 0; // File does not have a matching extension, skip it
 }
 
-int perform_file_operation(const char *src_path, const char *dest_path, int is_move) {
+// Function to perform file operations
+int ls_perform_file_operation(const char *src_path, const char *dest_path, int is_move) {
     // Check if the file has a valid extension
-    if (!has_extension(src_path)) {
+    if (!ls_has_extension(src_path)) {
         return 0;
     }
 
@@ -81,19 +87,18 @@ int perform_file_operation(const char *src_path, const char *dest_path, int is_m
     return 0;
 }
 
-void copy_contents(const char *src_path, const char *dest_path, int is_move) {
+// Recursive Function for traversal 
+void ls_copy_contents(const char *src_path, const char *dest_path, int is_move) {
     struct stat st;
     if (stat(src_path, &st) == 0) {
         if (S_ISDIR(st.st_mode)) {
-            // It's a directory, so recursively copy its contents
             DIR *dir = opendir(src_path);
             if (dir == NULL) {
                 perror("opendir");
                 return;
             }
 
-            // Create destination directory if it doesn't exist
-            create_destination_directory(dest_path);
+            ls_create_destination_directory(dest_path);
 
             struct dirent *entry;
             while ((entry = readdir(dir))) {
@@ -105,7 +110,7 @@ void copy_contents(const char *src_path, const char *dest_path, int is_move) {
                 snprintf(sub_src, PATH_MAX, "%s/%s", src_path, entry->d_name);
                 snprintf(sub_dest, PATH_MAX, "%s/%s", dest_path, entry->d_name);
 
-                copy_contents(sub_src, sub_dest, is_move);
+                ls_copy_contents(sub_src, sub_dest, is_move);
             }
 
             closedir(dir);
@@ -116,14 +121,12 @@ void copy_contents(const char *src_path, const char *dest_path, int is_move) {
                 }
             }
         } else if (S_ISREG(st.st_mode)) {
-            // It's a regular file, so copy or move it
-            // Create destination directory if it doesn't exist
             char dest_dir_copy[PATH_MAX];
             strcpy(dest_dir_copy, dest_path);
-            create_destination_directory(dirname(dest_dir_copy));
+            ls_create_destination_directory(dirname(dest_dir_copy));
 
             // Copy or move the file
-            perform_file_operation(src_path, dest_path, is_move);
+            ls_perform_file_operation(src_path, dest_path, is_move);
         }
     }
 }
@@ -135,7 +138,7 @@ int main(int argc, char *argv[]) {
     }
 
     const char *src_dir = argv[1];
-    dest_dir = argv[2];  // Assign to global variable
+    dest_dir = argv[2];  
 
     // Check if the source directory exists
     struct stat src_stat;
@@ -144,7 +147,8 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    int is_move = 0;  // Flag to indicate whether to move or copy
+    // Flag to indicate whether to move or copy
+    int is_move = 0;  
 
     // Check if extensions are provided
     if (argc > 3) {
@@ -155,12 +159,12 @@ int main(int argc, char *argv[]) {
             // Extensions are provided for moving
             is_move = 1;
         } else {
-            fprintf(stderr, "Invalid flag: %s. Please use -cp or -mv.\n", argv[3]);
+            fprintf(stderr, "Invalid flag: %s. Please provide -cp or -mv flag.\n", argv[3]);
             fprintf(stderr, "Usage: %s <src_path> <dest_path> [-cp/-mv <extension1> ... <extension6>]\n", argv[0]);
             return EXIT_FAILURE;
         }
     } else {
-        fprintf(stderr, "No flag provided. Please use -cp or -mv.\n");
+        fprintf(stderr, "No flag provided. Please provide -cp or -mv flag.\n");
         fprintf(stderr, "Usage: %s <src_path> <dest_path> [-cp/-mv <extension1> ... <extension6>]\n", argv[0]);
         return EXIT_FAILURE;
     }
@@ -171,10 +175,10 @@ int main(int argc, char *argv[]) {
         extension_count++;
     }
 
-    create_destination_directory(dest_dir);
+    ls_create_destination_directory(dest_dir);
 
     // Copy or move the contents
-    copy_contents(src_dir, dest_dir, is_move);
+    ls_copy_contents(src_dir, dest_dir, is_move);
 
     if (extension_count > 0) {
         if (is_move) {
